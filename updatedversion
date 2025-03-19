@@ -1,0 +1,308 @@
+import java.util.*;
+import java.io.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+
+// ------------------------------------------------------ Diary Class ----------------------------------------------------------
+class Diary implements Serializable {
+    private String date;
+    private String content;
+
+    public Diary(String date, String content) {
+        this.date = validateDate(date);
+        this.content = validateContent(content);
+    }
+
+    private String validateDate(String date) {
+        try {
+            LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            return date;
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException("Invalid date format! Use DD/MM/YYYY");
+        }
+    }
+
+    private String validateContent(String content) {
+        if (content == null || content.trim().isEmpty()) {
+            throw new IllegalArgumentException("Content cannot be empty!");
+        }
+        return content.trim();
+    }
+
+    public String getDate() { return date; }
+    public String getContent() { return content; }
+
+    @Override
+    public String toString() {
+        return "Date: " + date + "\nEntry:\n" + content + "\n";
+    }
+}
+
+// -------------------------------------------------- Diary Manager Class ------------------------------------------------------
+class DiaryManager implements Serializable {
+    private Vector<Diary> entries = new Vector<>();
+    private transient Scanner sc = new Scanner(System.in);
+
+    public void addEntry() {
+        try {
+            System.out.print("Enter date (DD/MM/YYYY): ");
+            String date = sc.nextLine();
+            
+            if (entryExists(date)) {
+                System.out.print("Entry exists! Overwrite? (Y/N): ");
+                if (!sc.nextLine().equalsIgnoreCase("Y")) return;
+                removeEntry(date);
+            }
+
+            System.out.println("Enter diary content (type 'SAVE' on new line to finish):");
+            String content = readMultiLineInput();
+            
+            entries.add(new Diary(date, content));
+            System.out.println("Entry added successfully!");
+        } catch (IllegalArgumentException e) {
+            System.out.println("Error: " + e.getMessage());
+        }
+    }
+
+    private String readMultiLineInput() {
+        StringBuilder content = new StringBuilder();
+        while (true) {
+            String line = sc.nextLine();
+            if (line.equalsIgnoreCase("SAVE")) break;
+            content.append(line).append("\n");
+        }
+        return content.toString().trim();
+    }
+
+    public boolean entryExists(String date) {
+        return entries.stream().anyMatch(e -> e.getDate().equals(date));
+    }
+
+    public void removeEntry(String date) {
+        entries.removeIf(e -> e.getDate().equals(date));
+        System.out.println("Entry removed!");
+    }
+
+    public void displayEntries() {
+        if (entries.isEmpty()) {
+            System.out.println("No entries found!");
+            return;
+        }
+        entries.forEach(System.out::println);
+    }
+
+    public void searchEntries(String keyword) {
+        entries.stream()
+            .filter(e -> e.getContent().toLowerCase().contains(keyword.toLowerCase()))
+            .forEach(System.out::println);
+    }
+}
+
+// ------------------------------------------------------ Journal Class --------------------------------------------------------
+class Journal implements Serializable {
+    private String label;
+    private String title;
+    private String content;
+    private String date;
+
+    public Journal(String date, String title, String content, String label) {
+        this.date = validateDate(date);
+        this.title = validateField(title, "Title");
+        this.content = validateField(content, "Content");
+        this.label = validateField(label, "Label");
+    }
+
+    private String validateDate(String date) {
+        try {
+            LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            return date;
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException("Invalid date format! Use DD/MM/YYYY");
+        }
+    }
+
+    private String validateField(String value, String fieldName) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " cannot be empty!");
+        }
+        return value.trim();
+    }
+
+    // Getters and toString...
+}
+
+// -------------------------------------------------- Journal Manager Class ----------------------------------------------------
+class JournalManager implements Serializable {
+    private Vector<Vector<Journal>> notesUnderLabel = new Vector<>();
+    private Vector<String> labels = new Vector<>();
+    private transient Scanner sc = new Scanner(System.in);
+
+    public void createLabel() {
+        System.out.print("Enter label name: ");
+        String label = sc.nextLine().trim();
+        
+        if (labels.contains(label)) {
+            System.out.println("Label already exists!");
+            return;
+        }
+        
+        notesUnderLabel.add(new Vector<>());
+        labels.add(label);
+        System.out.println("Label created!");
+    }
+
+    public void createNote() {
+        System.out.print("Enter label name: ");
+        String label = sc.nextLine().trim();
+        
+        int index = labels.indexOf(label);
+        if (index == -1) {
+            System.out.println("Label doesn't exist!");
+            return;
+        }
+
+        try {
+            System.out.print("Enter date (DD/MM/YYYY): ");
+            String date = sc.nextLine();
+            
+            System.out.print("Enter title: ");
+            String title = sc.nextLine().trim();
+            
+            System.out.println("Enter content (type 'SAVE' to finish):");
+            String content = readMultiLineInput();
+
+            Vector<Journal> notes = notesUnderLabel.get(index);
+            if (notes.stream().anyMatch(n -> n.getTitle().equalsIgnoreCase(title))) {
+                System.out.println("Note with this title already exists!");
+                return;
+            }
+
+            notes.add(new Journal(date, title, content, label));
+            System.out.println("Note added successfully!");
+        } catch (IllegalArgumentException e) {
+            System.out.println("Error: " + e.getMessage());
+        }
+    }
+
+    // Other improved journal methods...
+}
+
+// ------------------------------------------------------ Main Class -----------------------------------------------------------
+public class DigitalDiary {
+    private static final String DATA_FILE = "diary_data.ser";
+    private static final String CONFIG_FILE = "diary_config.cfg";
+    private static Scanner sc = new Scanner(System.in);
+
+    public static void main(String[] args) {
+        DiaryManager diaryManager = new DiaryManager();
+        JournalManager journalManager = new JournalManager();
+        
+        loadData(diaryManager, journalManager);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> saveData(diaryManager, journalManager)));
+
+        if (!authenticateUser()) {
+            System.out.println("Authentication failed! Exiting...");
+            return;
+        }
+
+        mainLoop(diaryManager, journalManager);
+        sc.close();
+    }
+
+    private static void mainLoop(DiaryManager dm, JournalManager jm) {
+        while (true) {
+            System.out.println("\n=== Main Menu ===");
+            System.out.println("1. Diary Operations");
+            System.out.println("2. Journal Operations");
+            System.out.println("3. Exit");
+            System.out.print("Choose option: ");
+            
+            switch (sc.nextLine()) {
+                case "1":
+                    diaryOperations(dm);
+                    break;
+                case "2":
+                    journalOperations(jm);
+                    break;
+                case "3":
+                    System.out.println("Goodbye!");
+                    return;
+                default:
+                    System.out.println("Invalid option!");
+            }
+        }
+    }
+
+    private static void diaryOperations(DiaryManager dm) {
+        // Enhanced diary menu
+    }
+
+    private static void journalOperations(JournalManager jm) {
+        // Enhanced journal menu
+    }
+
+    private static boolean authenticateUser() {
+        try {
+            Properties props = new Properties();
+            File configFile = new File(CONFIG_FILE);
+            
+            if (!configFile.exists()) {
+                System.out.println("Create new password:");
+                String password = hashPassword(sc.nextLine());
+                props.setProperty("password", password);
+                try (OutputStream out = new FileOutputStream(CONFIG_FILE)) {
+                    props.store(out, null);
+                }
+                return true;
+            }
+
+            try (InputStream in = new FileInputStream(CONFIG_FILE)) {
+                props.load(in);
+            }
+
+            System.out.print("Enter password: ");
+            String attempt = hashPassword(sc.nextLine());
+            return attempt.equals(props.getProperty("password"));
+        } catch (IOException | NoSuchAlgorithmException e) {
+            System.err.println("Authentication error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static String hashPassword(String password) throws NoSuchAlgorithmException {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        byte[] hashedBytes = md.digest(password.getBytes());
+        StringBuilder sb = new StringBuilder();
+        for (byte b : hashedBytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    private static void saveData(DiaryManager dm, JournalManager jm) {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(DATA_FILE))) {
+            oos.writeObject(dm);
+            oos.writeObject(jm);
+        } catch (IOException e) {
+            System.err.println("Error saving data: " + e.getMessage());
+        }
+    }
+
+    private static void loadData(DiaryManager dm, JournalManager jm) {
+        File dataFile = new File(DATA_FILE);
+        if (dataFile.exists()) {
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(DATA_FILE))) {
+                DiaryManager loadedDM = (DiaryManager) ois.readObject();
+                JournalManager loadedJM = (JournalManager) ois.readObject();
+                
+                dm = loadedDM;
+                jm = loadedJM;
+            } catch (IOException | ClassNotFoundException e) {
+                System.err.println("Error loading data: " + e.getMessage());
+            }
+        }
+    }
+}
